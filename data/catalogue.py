@@ -1,45 +1,57 @@
 import pandas as pd
 import numpy as np
-import utm
+from copy import deepcopy
+
+from pyproj import Proj, Transformer
+import pygmt
+
+from matplotlib import pyplot as plt
+from matplotlib import axes, path
+
 
 
 class EarthquakeCatalogue(object):
-    def __init__(self, data=None, **kwargs):
+    def __init__(self, data=None, epsg='epsg:4326', **kwargs):
+        self.epsg_latlon = epsg  # WGS84 by default
         if isinstance(data, str):
             # Use the value of input field "data" as name of an input CSV file:
-            self.load_from_csv(data, **kwargs)
-        elif isinstance(data, np.ndarray):
-            # Catalogue provided as a Nx5 2-D array:
-            self.load_from_2d_array(data)
+            self.load_from_csv(data, verbose=True, **kwargs)
+        elif isinstance(data, pd.DataFrame):
+            # Catalogue provided as a pandas.DataFrame instance:
+            self.load_from_dataframe(data)
 
 
     def __repr__(self):
         pass
 
 
-    def load_from_2d_array(self, array):
+    def load_from_dataframe(self, df):
         """
         Load EarthquakeCatalogue instance from a Nx5 2-D numpy array, where columns are ordered in the following
         order: "lon, lat, depth, mag, date"
-        :param array: Nx5 2-D numpy array
+        :param df: Pandas.DataFrame instance, containing at least these fields: latitude, longitude, depth, magnitude, date.
         """
-        self.lons = array[:, 0]
-        self.lats = array[:, 1]
-        self.deps = array[:, 2]
-        self.mags = array[:, 3]
-        self.dates = array[:, 4]
+        self.lons = df['longitude'].values
+        self.lats = df['latitude'].values
+        self.deps = df['depth'].values
+        self.mags = df['magnitude'].values
+        self.dates = df['date'].values
+        self.east = deepcopy(self.lons)  # Initialization
+        self.north = deepcopy(self.lats)  # Initialization
+        self.epsg_eastnorth = self.epsg_latlon  # Initialization
 
 
-    def load_from_csv(self, csvfile, **kwargs):
+    def load_from_csv(self, csvfile, verbose=False, **kwargs):
         """
         :param csvfile: Earthquake catalogue in CSV format.
                         Required column names are: latitude, longitude, depth, magnitude, date.
-        :param kwargs: additional keyword-value optional arguments passed onthe numpy.genfromtxt method
+        :param kwargs: additional keyword-value optional arguments passed to the pandas.read_csv method
         """
-        fields = ['longitude', 'latitude', 'depth', 'magnitude', 'date']
-        cat = np.genfromtxt(csvfile, names=fields, **kwargs)
-        self.load_from_2d_array(cat)
-
+        fields = ['date', 'longitude', 'latitude', 'depth', 'magnitude']
+        catalog = pd.read_csv(csvfile, names=fields, **kwargs)
+        if verbose:
+            catalog.info()
+        self.load_from_dataframe(catalog)
 
     def decimate(self, indices, inplace=False):
         """
@@ -53,27 +65,71 @@ class EarthquakeCatalogue(object):
         """
         indices = np.array(indices)
         if inplace:
-            for att in ['lons', 'lats', 'deps', 'mags', 'dates']:
+            for att in ['dates', 'lons', 'lats', 'deps', 'mags']:
                 setattr(self, att, getattr(self, att)[indices])
         else:
             cat = np.column_stack((self.lons, self.lats, self.depth, self.mags, self.dates))
             return EarthquakeCatalogue(data=cat[indices,:])
 
 
-    def lonlat2utm(self):
+    def project2epsg(self, epsg: str):
         """
-        Convert coordinates expressed in Latitude and Longitude (decimal degrees, WGS84) to
-        UTM coordinates (expressed in meters)
+        Project longitude, latitude coordinates of the original coordinate system (given in self.epsg) to any other
+        coordinate system specified in the input EPSG code
+        :param epsg: str, EPSG code for the target coordiante system, e.g. 'epsg:2154' for Lambert 93
+        :return:
         """
-        if (not hasattr(self, 'lons')) or (not hasattr(self, 'lats')):
-            raise AttributeError('Missing longitude and latitude attributes in EarthquakeCatalogue instance')
-        utm_east = list()
-        utm_north = list()
-        self.utm_zone = list()
-        for coord in zip(self.lats, self.lons):
-            x, y, num, letter = utm.from_latlon(coord[0], coord[1])
-            utm_east.append(x)
-            utm_north.append(y)
-            self.utm_zone.append(str(num)+letter)
-        self.utm_east = np.array(utm_east)
-        self.utm_north = np.array(utm_north)
+        tr = Transformer.from_crs(self.epsg_latlon.upper(), epsg.upper())
+        x_proj = list()
+        y_proj = list()
+        for lon, lat in zip(self.lons, self.lats):
+            new_coords = tr.transform(lon, lat)
+            x_proj.append(new_coords[0])
+            y_proj.append(new_coords[1])
+        self.east = np.array(x_proj)  # Not sure if really useful to preserve original coordinates after projection (to preserve mapping capacity ?)
+        self.north = np.array(y_proj)
+        self.epsg_eastnorth = epsg
+
+
+    def in_polygon(self, lonlat):
+        """
+        Return an array of boolean specifying whether each earthquake in the catalogue is located within (True) or
+        outside (False) of the polygon which vertices are provided in input variable LONLAT.
+
+        :param lonlat: list of tuples, each element contains a pair of (LON, LAT) coordinates
+        :return: isin: numpy array of boolean
+        """
+        p = path.Path(lonlat)
+        coords = [(self.lons[k], self.lats[k]) for k in range(len(self.lons))]
+        isin = p.contains_points(coords)
+        return np.array(isin)
+
+
+    def map_events(self, savefig=False, filename='map.jpg'):
+        """
+        Produce a map of earthquakes with topography
+
+        :return:
+        """
+        bounds = [self.lons.min() ,self.lons.max() ,self.lats.min() ,self.lats.max() ]
+        grid = pygmt.datasets.load_earth_relief(resolution="06m", region=bounds)
+
+        inf2_3 = np.where((self.mags >= 2) & (self.mags < 3))[0]
+        inf3_4 = np.where((self.mags >= 3) & (self.mags < 4))[0]
+        inf4_5 = np.where((self.mags >= 4) & (self.mags < 5))[0]
+        inf5_6 = np.where((self.mags >= 5) & (self.mags < 6))[0]
+        sup_6 = np.where(self.mags > 6)[0]
+
+        fig = pygmt.Figure()
+        fig.grdimage(grid=grid, projection="M15c", frame="a", cmap="geo")
+        fig.plot(x=self.lons[inf2_3], y=self.lats[inf2_3], style="c0.1c", pen="red", color="white", label=f"2<=Mw<3")
+        fig.plot(x=self.lons[inf3_4], y=self.lats[inf3_4], style="c0.15c", pen="red", color="white", label=f"3<=Mw<4")
+        fig.plot(x=self.lons[inf4_5], y=self.lats[inf4_5], style="c0.2c", pen="red", color="white", label=f"4<=Mw<5")
+        fig.plot(x=self.lons[inf5_6], y=self.lats[inf5_6], style="c0.3c", pen="red", color="white", label=f"5<=Mw<6")
+        fig.plot(x=self.lons[sup_6], y=self.lats[sup_6], style="c0.4c", pen="red", color="white", label=f"Mw>6")
+        fig.coast(borders=["1/0.5p,black"], shorelines=True, rivers=["1/0.5p,blue"], lakes=["blue"], resolution='i')
+        fig.basemap(frame=True)
+        fig.legend(transparency=20)
+        if savefig:
+            fig.savefig(filename)
+        fig.show()
