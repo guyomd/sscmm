@@ -36,9 +36,9 @@ class EarthquakeCatalogue(object):
         self.deps = df['depth'].values
         self.mags = df['magnitude'].values
         self.dates = df['date'].values
-        self.east = deepcopy(self.lons)  # Initialization
-        self.north = deepcopy(self.lats)  # Initialization
-        self.epsg_eastnorth = self.epsg_latlon  # Initialization
+        self.x = deepcopy(self.lons)  # Initialization
+        self.y = deepcopy(self.lats)  # Initialization
+        self.epsg_xy = self.epsg_latlon  # Initialization
 
 
     def load_from_csv(self, csvfile, verbose=False, **kwargs):
@@ -86,9 +86,9 @@ class EarthquakeCatalogue(object):
             new_coords = tr.transform(lon, lat)
             x_proj.append(new_coords[0])
             y_proj.append(new_coords[1])
-        self.east = np.array(x_proj)  # Not sure if really useful to preserve original coordinates after projection (to preserve mapping capacity ?)
-        self.north = np.array(y_proj)
-        self.epsg_eastnorth = epsg
+        self.x = np.array(x_proj)  # Not sure if really useful to preserve original coordinates after projection (to preserve mapping capacity ?)
+        self.y = np.array(y_proj)
+        self.epsg_xy = epsg
 
 
     def in_polygon(self, lonlat):
