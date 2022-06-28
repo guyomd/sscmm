@@ -4,6 +4,23 @@ from scipy.special import gammainc
 from matplotlib import pyplot as plt ## TODO: To replace by pygmt!
 from sscmm.methods.waitingtimes import WaitingTimesDistribution
 
+rng = np.random.default_rng()
+
+
+def _remove_doublons(x, verbose=False):
+    """
+    Sort and remove doublons from series X
+
+    :param x: numpy.ndarray, array of floating numbers
+    """
+    dx = np.diff(np.sort(x))
+    i0 = np.where(dx == 0.0)[0]
+    if len(i0) > 0:
+        if verbose: print(f'Warning! {len(i0)} doublons identified in array of length {len(x)}')
+        rv = 1 - rng.random((len(i0),))  # Random-values in (0.0, 1.0]
+        x[i0 + 1] = x[i0 + 1] * (1 + rv * 1E-4)  # Adds random fraction of its own value (between 0 and 1E-4)
+    return x
+
 
 class ChangePointFinder(object):
 
@@ -20,19 +37,14 @@ class ChangePointFinder(object):
 
     def _parse_input_times(self, t):
         t = np.array(t)
-        return np.sort(t)
+        return _remove_doublons(np.sort(t))
 
 
     def _compute_waiting_times(self, t):
         dt = np.diff(t)
         nz = np.where(dt > 0)[0]
         dt = np.sort(dt[nz])
-        # Avoid doublons in waiting-time values:
-        ddt = np.diff(dt)
-        i0 = np.where(ddt == 0.0)[0]
-        rv = 1 - rng.random((len(i0),))  # Random-values in (0.0, 1.0]
-        dt[i0 + 1] = dt[i0 + 1] * (1 + rv / 1000)  # Adds random fraction of its own value (between 0 and 1/1000)
-        return dt
+        return _remove_doublons(dt)
 
     def _find_cp(self, t: np.ndarray, nmin=30, display=False):
         """
