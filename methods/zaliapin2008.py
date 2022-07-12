@@ -64,24 +64,25 @@ class NNanalysis():
     """
     Nearest-Neighbour "space-time-mag distance" object definition
     """
-    def __init__(self, b: float, d: float, t, m, x, y, z=None, mc=None, time_norm=1.0):
+    def __init__(self, t, m, x, y, b: float, d: float, w: float, p=0.5, q=0.5, z=None, mc=None, time_norm=1.0):
         """
         Initialize a space-time-magnitude nearest-neighbor distance object.
         Warning: Input arguments T, M, X, Y [,Z] must only account for earthquakes above
         an implicit completeness threshold.
-        :param b: float, slope of Gutenberg-Richter frequency-magnitude relationship
-        :param d: float, spatial fractal dimension of epicentral cloud
-        :param t: list or pandas.Series, earthquake origin times, expressed as floating number in any time unit
+       :param t: list or pandas.Series, earthquake origin times, expressed as floating number in any time unit
         (e.g. sec, hour, year...).Note that parameter "tmin" in self.calc() should be expressed in the same unit.
         :param m: list or pandas.Series, earthquake magnitudes
         :param x: list or pandas.Series, earthquake longitudes, expressed in meters or kilometers
         :param y: list or pandas.Series, earthquake latitudes, expressed in meters or kilometers
+        :param b: float, slope of Gutenberg-Richter frequency-magnitude relationship
+        :param d: float, spatial fractal dimension of epicentral cloud
+        :param w: float, magnitude-scaling parameter. Recommended value can be w = b or w = 0 to remove dependence on m
+        :param p, q: float, scalar parameters for the separation of the distance into space and time components R and T
         :param z: list or pandas.Series, earthquake depths, expressed in meters or kilometers
         :param mc: scalar, minimum magnitude threshold
         :param time_norm: float, normalization time unit, expressed as a floating number in the same unit than
         parameters t and tmin. Set value to None or 1 to avoid normalization.
         """
-
         # Check input arguments:
         if isinstance(t, Series):
             t = t.values
@@ -97,12 +98,6 @@ class NNanalysis():
             z_nan = np.isnan(z).sum()
             if z_nan > 0:
                 raise ValueError(f'Input Z data (depth) contains {z_nan} NaN values.')
-
-        if isinstance(b, list) or isinstance(b, tuple):
-          raise ValueError('Error: Input parameter b must be a scalar! (Current length={})'.format(len(b)))
-        self.mc = mc
-        self.b = b
-        self.d = d
 
         if mc is None:
             self.t = t
@@ -135,23 +130,28 @@ class NNanalysis():
         if z is not None:
             self.z = self.z[isort]
 
+        # Manage constants:
+        self.mc = mc
+        self.b = b
+        self.d = d
+        self.w = w
+        self.p = p
+        self.q = q
 
-    def calc(self, w, p = 0.5, q = 0.5):
+
+    def calc(self):
         """
         Compute nearest-neighbour distances using Zaliapin & Bein-Zion (2007) algorithm
-
-        :param w: float, magnitude-scaling parameter. Recommended value can be w = b or w = 0 to remove dependence on m
-        :param p, q: float, scalar parameters for the separation of the distance into space and time components R and T
         """
         ne = len(self.t)
         self.eta = np.zeros((len(self.t)-1,))
-        self.parent = []
         self.offspring = []
         self.R = np.zeros_like(self.eta)
         self.T = np.zeros_like(self.eta)
         cmax = ne * (ne - 1) / 2
         bar = ProgressBar(cmax, title = 'Compute nearest-neighbor distances', nsym=25)
         ccur = 0
+        self.parent = {'id': [], 'mag': []}
         for jj in range(1,ne):
             predecessors = list(range(jj))
             ccur += len(predecessors)
@@ -165,12 +165,13 @@ class NNanalysis():
                                            predecessors_coords,
                                            self.t[jj] - self.t[predecessors],
                                            self.m[predecessors],
-                                           w,
+                                           self.w,
                                            self.d,
-                                           p,
-                                           q)
+                                           self.p,
+                                           self.q)
             self.offspring.append(jj)
-            self.parent.append(predecessors[imin])
+            self.parent['id'].append(predecessors[imin])
+            self.parent['mag'].append(self.m[predecessors[imin]])
             bar.update(ccur)
 
 
@@ -251,7 +252,7 @@ class NNanalysis():
         norm_prox = np.insert(a * A0, 0, 1)  # Add normalized proximity of 1 for the first event (set as background)
         self.prob_bgnd = np.minimum(norm_prox, np.ones_like(norm_prox))
         is_bgnd = norm_prox > rng.uniform(0, 1, ne)
-        return is_bgnd
+        return np.logical_not(is_bgnd)  # =0 for mainshocks, =1 for aftershocks
 
 
     ### Plot methods: ###
