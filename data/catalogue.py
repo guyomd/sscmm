@@ -156,14 +156,13 @@ class EarthquakeCatalogue(object):
         return np.array(isin)
 
 
-    def map_events(self, savefig=False, filename='map.jpg'):
+    def map_events(self, savefig=False, filename='map.jpg', add_topo=True):
         '''
         Produce a map of earthquakes with topography
 
         :return:
         '''
         bounds = [self.lons.min() ,self.lons.max() ,self.lats.min() ,self.lats.max() ]
-        grid = pygmt.datasets.load_earth_relief(resolution="06m", region=bounds)
 
         inf2_3 = np.where((self.mags >= 2) & (self.mags < 3))[0]
         inf3_4 = np.where((self.mags >= 3) & (self.mags < 4))[0]
@@ -172,7 +171,9 @@ class EarthquakeCatalogue(object):
         sup_6 = np.where(self.mags > 6)[0]
 
         fig = pygmt.Figure()
-        fig.grdimage(grid=grid, projection="M15c", frame="a", cmap="geo")
+        if add_topo:
+            grid = pygmt.datasets.load_earth_relief(resolution="06m", region=bounds)
+            fig.grdimage(grid=grid, projection="M15c", frame="a", cmap="geo")
         fig.plot(x=self.lons[inf2_3], y=self.lats[inf2_3], style="c0.1c", pen="red", color="white", label=f"2<=Mw<3")
         fig.plot(x=self.lons[inf3_4], y=self.lats[inf3_4], style="c0.15c", pen="red", color="white", label=f"3<=Mw<4")
         fig.plot(x=self.lons[inf4_5], y=self.lats[inf4_5], style="c0.2c", pen="red", color="white", label=f"4<=Mw<5")
