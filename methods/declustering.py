@@ -6,7 +6,7 @@ class DeclusteringAlgorithm(object):
     def __init__(self, method, prms: dict):
         self.method = method.lower()
         if self.method == "zaliapin2008":
-            required_parameters = ['cat', 'b', 'd', 'w']
+            required_parameters = ['b', 'd', 'w']
             optional_parameters = ['mc', 'time_norm', 'p', 'q', 'z', 'eta0', 'alpha0']
 
         elif self.method == 'reasenberg1985':
@@ -19,7 +19,7 @@ class DeclusteringAlgorithm(object):
             required_parameters = ['rtwin']
             optional_parameters = ['fs_time_prop']
 
-        self.prms, self.opts = self._parse_parameters(prms, required_parameters, optional_parameters)
+        self._parse_parameters(prms, required_parameters, optional=optional_parameters)
 
 
     def _parse_parameters(self, prms: dict, required, optional=[]):
@@ -32,9 +32,9 @@ class DeclusteringAlgorithm(object):
                 raise ValueError(f'Missing required parameter "{key}"')
         # optional parameters:
         kwargs = {}
-        for opt in optional_parameters:
+        for opt in optional:
             if isinstance(opt, str):
-                if has_key(prms, opt):
+                if opt in prms.keys():
                     kwargs.update({opt: prms[opt]})
         self.prms = prms
         self.opts = kwargs
@@ -42,6 +42,7 @@ class DeclusteringAlgorithm(object):
 
     def apply(self, cat, **kwargs):
         output = getattr(self, f'_run_{self.method}')(cat, **kwargs)
+        return output
 
 
     def _run_zaliapin2008(self, cat, declustering_method=None, **kwargs):
@@ -55,10 +56,10 @@ class DeclusteringAlgorithm(object):
         :return:
         """
         # Nearest-neighbor analysis:
-        nn = NNanalysis(self.prms['cat'].dates,
-                        self.prms['cat'].mags,
-                        self.prms['cat'].x,
-                        self.prms['cat'].y,
+        nn = NNanalysis(cat.dates,
+                        cat.mags,
+                        cat.x,
+                        cat.y,
                         self.prms['b'],
                         self.prms['d'],
                         self.prms['w'],
@@ -79,7 +80,7 @@ class DeclusteringAlgorithm(object):
         pass
 
 
-    def _run_gardner1974(self, cat, return_indices=False):
+    def _run_gardner1974(self, cat, return_indices=True):
         """
         Run Gardner and Knopoff (1974) declustering algorithm
 

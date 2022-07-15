@@ -156,7 +156,7 @@ class EarthquakeCatalogue(object):
         return np.array(isin)
 
 
-    def map_events(self, savefig=False, filename='map.jpg', add_topo=True):
+    def map_events(self, mag_bins=[(2,3), (3,4), (4,5), (5,6), (6,10)], symbol_sizes=[0.1, 0.15, 0.2, 0.3, 0.5], savefig=False, filename='map.jpg', add_topo=True):
         '''
         Produce a map of earthquakes with topography
 
@@ -164,21 +164,18 @@ class EarthquakeCatalogue(object):
         '''
         bounds = [self.lons.min() ,self.lons.max() ,self.lats.min() ,self.lats.max() ]
 
-        inf2_3 = np.where((self.mags >= 2) & (self.mags < 3))[0]
-        inf3_4 = np.where((self.mags >= 3) & (self.mags < 4))[0]
-        inf4_5 = np.where((self.mags >= 4) & (self.mags < 5))[0]
-        inf5_6 = np.where((self.mags >= 5) & (self.mags < 6))[0]
-        sup_6 = np.where(self.mags > 6)[0]
-
         fig = pygmt.Figure()
         if add_topo:
             grid = pygmt.datasets.load_earth_relief(resolution="06m", region=bounds)
             fig.grdimage(grid=grid, projection="M15c", frame="a", cmap="geo")
-        fig.plot(x=self.lons[inf2_3], y=self.lats[inf2_3], style="c0.1c", pen="red", color="white", label=f"2<=Mw<3")
-        fig.plot(x=self.lons[inf3_4], y=self.lats[inf3_4], style="c0.15c", pen="red", color="white", label=f"3<=Mw<4")
-        fig.plot(x=self.lons[inf4_5], y=self.lats[inf4_5], style="c0.2c", pen="red", color="white", label=f"4<=Mw<5")
-        fig.plot(x=self.lons[inf5_6], y=self.lats[inf5_6], style="c0.3c", pen="red", color="white", label=f"5<=Mw<6")
-        fig.plot(x=self.lons[sup_6], y=self.lats[sup_6], style="c0.4c", pen="red", color="white", label=f"Mw>6")
+
+        if mag_bins is not None:
+            for i in range(len(mag_bins)):
+                iev = np.where((self.mags >= mag_bins[i][0]) & (self.mags < mag_bins[i][1]))[0]
+                fig.plot(x=self.lons[iev], y=self.lats[iev], style=f"c{symbol_sizes[i]}c", pen="red", color="white",
+                         label=f"{mag_bins[i][0]}<=Mw<{mag_bins[i][1]}")
+        else:
+            fig.plot(x=self.lons, y=self.lats, style="c0.1c", pen="red", color="white")
         fig.coast(borders=["1/0.5p,black"], shorelines=True, rivers=["1/0.5p,blue"], lakes=["blue"], resolution='i')
         fig.basemap(frame=True)
         fig.legend(transparency=20)
@@ -200,14 +197,14 @@ class EarthquakeCatalogue(object):
         return cat
 
 
-    def decluster(self, return_catalogue=False, **kwargs):
+    def decluster(self, method, prms, return_catalogue=False, **kwargs):
         """
         Apply a Declustering Algorithm to the current catalogue
 
         :return:
         """
         algo = DeclusteringAlgorithm(method, prms)
-        output = algo.run(self, **kwargs)
+        output = algo.apply(self, **kwargs)
 
         if return_catalogue and ('flag' in output.keys()):
             main_indx = np.where(output['flag'] == 0)[0]
@@ -217,3 +214,6 @@ class EarthquakeCatalogue(object):
             return output, catms
         else:
             return output
+
+    def completeness(self):
+        pass
