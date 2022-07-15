@@ -64,7 +64,8 @@ class DeclusteringAlgorithm(object):
                         self.prms['d'],
                         self.prms['w'],
                         **self.opts,
-                        **kwargs).calc()
+                        **kwargs)\
+        nn.calc()
 
         # Declustering, sensu stricto:
         if declustering_method is None:
